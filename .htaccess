@@ -1,0 +1,5 @@
+Options -Indexes
+RedirectMatch 404 "(?i)/\.git(?:/|$)"
+<FilesMatch "^(config\..*\.php|router\.php)$">
+    Require all denied
+</FilesMatch>
