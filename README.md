@@ -74,6 +74,8 @@ Worksnow includes a `Dockerfile` and `Caddyfile` for Vercel's Container preset, 
 
 5. Deploy and visit the application URL. The schema is created automatically; register your owner account and add your first service.
 
+For the TiDB Cloud integration in Vercel's Marketplace, select only this project, a MySQL-compatible Starter instance, a database named `worksnow`, and the **General** framework preset. Worksnow reads the integration's `TIDB_HOST`, `TIDB_PORT`, `TIDB_USER`, `TIDB_PASSWORD`, and `TIDB_DATABASE` variables directly. Explicit `WORKSNOW_DB_DSN` settings take precedence. Review the provider's plan and spending limits before provisioning, then redeploy after connecting the database.
+
 The container enables HTTPS-only cookies, a required external database, and database-backed PHP sessions. MySQL sessions use advisory locks to serialize concurrent requests for the same session. Each request opens one application connection and one session connection; configure database connection limits for the expected traffic. The database account needs table-creation permissions for automatic setup and `GET_LOCK` / `RELEASE_LOCK` support. MySQL connections verify TLS certificates. If a provider uses its own private CA, supply that CA through a securely managed file and set `WORKSNOW_DB_SSL_CA`; do not disable verification.
 
 `/health` reports whether PHP is responding, not whether the database is configured. A usable deployment must also load the registration page, persist a new workspace, and keep the login working across requests. A setup-error page means deployment is incomplete.

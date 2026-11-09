@@ -7,6 +7,18 @@ foreach (['dsn'=>'WORKSNOW_DB_DSN','db_user'=>'WORKSNOW_DB_USER','db_password'=>
     $value = getenv($variable);
     if ($value !== false) $config[$key] = $value;
 }
+// TiDB's Vercel integration supplies these values when its General preset is used.
+if (getenv('WORKSNOW_DB_DSN') === false && getenv('TIDB_HOST') !== false) {
+    $host = (string)getenv('TIDB_HOST');
+    $database = (string)getenv('TIDB_DATABASE');
+    $port = filter_var(getenv('TIDB_PORT') ?: '4000', FILTER_VALIDATE_INT, ['options'=>['min_range'=>1,'max_range'=>65535]]);
+    if (!preg_match('/^[a-zA-Z0-9.-]+$/', $host) || !preg_match('/^[a-zA-Z0-9_]+$/', $database) || $port === false) {
+        throw new RuntimeException('Invalid TiDB connection settings.');
+    }
+    $config['dsn'] = 'mysql:host=' . $host . ';port=' . $port . ';dbname=' . $database . ';charset=utf8mb4';
+    $config['db_user'] = (string)getenv('TIDB_USER');
+    $config['db_password'] = (string)getenv('TIDB_PASSWORD');
+}
 if (getenv('WORKSNOW_SECURE_COOKIES') !== false) $config['secure_cookies'] = getenv('WORKSNOW_SECURE_COOKIES') === '1';
 $externalDatabaseRequired = getenv('WORKSNOW_REQUIRE_EXTERNAL_DB') === '1' || getenv('VERCEL') === '1';
 if ($externalDatabaseRequired && !str_starts_with($config['dsn'], 'mysql:')) {
