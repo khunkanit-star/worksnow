@@ -3,18 +3,31 @@ declare(strict_types=1);
 
 $config = array_replace(require dirname(__DIR__) . '/config.example.php',
     is_file(dirname(__DIR__) . '/config.local.php') ? require dirname(__DIR__) . '/config.local.php' : []);
+foreach (['dsn'=>'WORKSNOW_DB_DSN','db_user'=>'WORKSNOW_DB_USER','db_password'=>'WORKSNOW_DB_PASSWORD','timezone'=>'WORKSNOW_TIMEZONE','session_driver'=>'WORKSNOW_SESSION_DRIVER','db_ssl_ca'=>'WORKSNOW_DB_SSL_CA'] as $key=>$variable) {
+    $value = getenv($variable);
+    if ($value !== false) $config[$key] = $value;
+}
+if (getenv('WORKSNOW_SECURE_COOKIES') !== false) $config['secure_cookies'] = getenv('WORKSNOW_SECURE_COOKIES') === '1';
+$externalDatabaseRequired = getenv('WORKSNOW_REQUIRE_EXTERNAL_DB') === '1' || getenv('VERCEL') === '1';
+if ($externalDatabaseRequired && !str_starts_with($config['dsn'], 'mysql:')) {
+    throw new RuntimeException('Configure WORKSNOW_DB_DSN with a hosted MySQL database before using the deployment.');
+}
 date_default_timezone_set($config['timezone']);
 ini_set('session.use_strict_mode', '1');
 session_name('worksnow_session');
 session_set_cookie_params(['httponly' => true, 'samesite' => 'Lax', 'secure' => (bool)$config['secure_cookies']]);
-session_start();
 header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: DENY');
 header('Referrer-Policy: same-origin');
 header("Content-Security-Policy: default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; base-uri 'self'; frame-ancestors 'none'; form-action 'self'");
 header('Cache-Control: no-store');
-if (!is_dir(dirname(__DIR__) . '/storage')) mkdir(dirname(__DIR__) . '/storage', 0700, true);
-$db = new PDO($config['dsn'], $config['db_user'], $config['db_password'], [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
+if (str_starts_with($config['dsn'], 'sqlite:') && !is_dir(dirname(__DIR__) . '/storage')) mkdir(dirname(__DIR__) . '/storage', 0700, true);
+$options = [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC];
+if (str_starts_with($config['dsn'], 'mysql:') && (!empty($config['db_ssl_ca']) || $externalDatabaseRequired)) {
+    $options[PDO::MYSQL_ATTR_SSL_CA] = $config['db_ssl_ca'] ?: '/etc/ssl/certs/ca-certificates.crt';
+    $options[PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT] = true;
+}
+$db = new PDO($config['dsn'], $config['db_user'], $config['db_password'], $options);
 $mysql = $db->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql';
 if ($mysql) $db->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
 if (!$mysql) { $db->exec('PRAGMA foreign_keys=ON'); $db->exec('PRAGMA busy_timeout=5000'); }
@@ -30,8 +43,17 @@ $tables = [
     "documents (id $id, business_id INTEGER NOT NULL, ticket_id INTEGER NOT NULL, kind VARCHAR(10) NOT NULL, status VARCHAR(20) NOT NULL, items TEXT NOT NULL, subtotal INTEGER NOT NULL, tax_rate INTEGER NOT NULL, tax INTEGER NOT NULL, total INTEGER NOT NULL, paid INTEGER NOT NULL DEFAULT 0, due_date VARCHAR(20) NOT NULL, notes TEXT NOT NULL, quote_id INTEGER NULL UNIQUE, created_at VARCHAR(30) NOT NULL, FOREIGN KEY (ticket_id) REFERENCES tickets(id), FOREIGN KEY (quote_id) REFERENCES documents(id))",
     "payments (id $id, business_id INTEGER NOT NULL, document_id INTEGER NOT NULL, amount INTEGER NOT NULL, method VARCHAR(40) NOT NULL, reference VARCHAR(160) NOT NULL, created_at VARCHAR(30) NOT NULL, FOREIGN KEY (document_id) REFERENCES documents(id))",
     "login_attempts (attempt_key VARCHAR(64) PRIMARY KEY, attempts INTEGER NOT NULL, started_at INTEGER NOT NULL)",
+    "sessions (id VARCHAR(128) PRIMARY KEY, data TEXT NOT NULL, expires_at INTEGER NOT NULL)",
 ];
 foreach ($tables as $table) $db->exec('CREATE TABLE IF NOT EXISTS ' . $table . ($mysql ? ' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4' : ''));
+if (($config['session_driver'] ?? ($mysql ? 'database' : 'file')) === 'database') {
+    require __DIR__ . '/database-session.php';
+    // A separate connection keeps session writes outside business-data transactions.
+    $sessionConnection = new PDO($config['dsn'], $config['db_user'], $config['db_password'], $options);
+    if (!$mysql) $sessionConnection->exec('PRAGMA busy_timeout=5000');
+    session_set_save_handler(new DatabaseSessionHandler($sessionConnection, $mysql), true);
+}
+session_start();
 
 function q(string $sql, array $params = []): PDOStatement { global $db; $s = $db->prepare($sql); $s->execute($params); return $s; }
 function one(string $sql, array $params = []): ?array { return q($sql, $params)->fetch() ?: null; }

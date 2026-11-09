@@ -6,3 +6,5 @@
 .env
 *.bak
 __pycache__/
+.vercel/
+.env.*

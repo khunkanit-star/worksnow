@@ -1,0 +1,8 @@
+.git
+.vercel
+.env*
+config.local.php
+storage
+tests
+*.log
+*.zip

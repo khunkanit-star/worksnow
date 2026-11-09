@@ -21,5 +21,5 @@ try {
 } catch (Throwable $ex) {
     error_log('Worksnow: ' . $ex->getMessage());
     http_response_code(500);
-    echo '<!doctype html><html lang="en"><meta charset="utf-8"><title>Worksnow setup</title><h1>Worksnow needs a database connection</h1><p>Check the PHP PDO driver and database settings in config.local.php. See README.md for setup instructions.</p></html>';
+    echo '<!doctype html><html lang="en"><meta charset="utf-8"><title>Worksnow setup</title><h1>Worksnow needs a database connection</h1><p>Check the PHP PDO driver and database settings. Hosted deployments use WORKSNOW_DB_DSN, WORKSNOW_DB_USER and WORKSNOW_DB_PASSWORD environment variables. See README.md for setup instructions.</p></html>';
 }

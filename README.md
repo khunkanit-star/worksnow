@@ -55,6 +55,38 @@ return [
 
 Enable `pdo_mysql`. The application creates the tables. Use HTTPS and a database account limited to this application's database. The MySQL path uses portable SQL and InnoDB, but automated integration tests currently exercise SQLite only. Existing SQLite data is not automatically migrated to MySQL.
 
+## Deploy to Vercel
+
+Worksnow includes a `Dockerfile` and `Caddyfile` for Vercel's Container preset, following [Vercel's PHP container guide](https://vercel.com/kb/guide/deploy-php-on-vercel-with-docker). The image serves only `public/index.php` and public assets. Private configuration, Git metadata, tests, and local data are excluded from the image and deployment upload.
+
+1. Sign in to Vercel and import `khunkanit-star/worksnow` from GitHub.
+2. Select **Container** as the framework preset if it is not detected automatically. Keep the repository root as the project root.
+3. Create a hosted MySQL 8-compatible database. Local SQLite is intentionally rejected inside the hosted container: container files are temporary and are not shared between instances.
+4. In **Settings → Environment Variables**, add the following values to Production. Use a separate database for Preview deployments if enabling previews.
+
+   | Variable | Value |
+   | --- | --- |
+   | `WORKSNOW_DB_DSN` | `mysql:host=YOUR_HOST;port=3306;dbname=worksnow;charset=utf8mb4` |
+   | `WORKSNOW_DB_USER` | Database username |
+   | `WORKSNOW_DB_PASSWORD` | Database password; mark sensitive |
+   | `WORKSNOW_DB_SSL_CA` | Optional CA certificate path; the container defaults to the system CA bundle |
+   | `WORKSNOW_TIMEZONE` | Optional, defaults to `Asia/Bangkok` |
+
+5. Deploy and visit the application URL. The schema is created automatically; register your owner account and add your first service.
+
+The container enables HTTPS-only cookies, a required external database, and database-backed PHP sessions. MySQL sessions use advisory locks to serialize concurrent requests for the same session. Each request opens one application connection and one session connection; configure database connection limits for the expected traffic. The database account needs table-creation permissions for automatic setup and `GET_LOCK` / `RELEASE_LOCK` support. MySQL connections verify TLS certificates. If a provider uses its own private CA, supply that CA through a securely managed file and set `WORKSNOW_DB_SSL_CA`; do not disable verification.
+
+`/health` reports whether PHP is responding, not whether the database is configured. A usable deployment must also load the registration page, persist a new workspace, and keep the login working across requests. A setup-error page means deployment is incomplete.
+
+For a local container check with Docker installed:
+
+```sh
+docker build -t worksnow .
+docker run --rm -p 8080:80 --env-file /path/to/private-database.env worksnow
+```
+
+Do not put credentials in build arguments, `Dockerfile`, Git, or public chat messages. Choose a Vercel plan suitable for your use and review any database subscription before accepting it. No paid service is required or provisioned by the repository itself.
+
 ## Typical workflow
 
 1. Customer opens the business request link and submits a job.

@@ -49,11 +49,14 @@ def run():
     parser = argparse.ArgumentParser()
     parser.add_argument("--php", default="php")
     parser.add_argument("--extension-dir", help="Run PHP with -n and this PDO SQLite extension directory")
+    parser.add_argument("--database-sessions", action="store_true", help="Exercise the shared session handler")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     with tempfile.TemporaryDirectory(prefix="worksnow-test-") as temporary:
         app = Path(temporary) / "app"
         shutil.copytree(root, app, ignore=shutil.ignore_patterns(".git", "config.local.php", "*.sqlite*", "__pycache__"))
+        if args.database_sessions:
+            (app / "config.local.php").write_text("<?php return ['session_driver' => 'database'];", encoding="utf-8")
         with socket.socket() as sock:
             sock.bind(("127.0.0.1", 0))
             port = sock.getsockname()[1]
@@ -157,6 +160,33 @@ def run():
                 check(connection.execute("SELECT total,paid,status FROM documents WHERE id=2").fetchone() == (74948,74948,"paid"), "Persisted accounting integrity")
                 check(connection.execute("SELECT COUNT(*) FROM payments").fetchone()[0] == 2, "Payment ledger integrity")
                 connection.close()
+                if args.database_sessions:
+                    with socket.socket() as alternate_socket:
+                        alternate_socket.bind(("127.0.0.1", 0))
+                        alternate_port = alternate_socket.getsockname()[1]
+                    alternate_cmd = cmd.copy()
+                    alternate_cmd[-2] = f"127.0.0.1:{alternate_port}"
+                    alternate = subprocess.Popen(alternate_cmd, cwd=app, stdout=log, stderr=log)
+                    try:
+                        owner.base = f"http://127.0.0.1:{alternate_port}/"
+                        for _ in range(50):
+                            try:
+                                alternate_status, alternate_body, _ = owner.get()
+                                break
+                            except OSError:
+                                time.sleep(0.1)
+                        check(alternate_status == 200 and "Let’s get good work done" in alternate_body, "Login survives a request on a separate PHP instance")
+                        owner.base = base
+                        connection = sqlite3.connect(app / "storage" / "worksnow.sqlite")
+                        check(connection.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] > 0, "Sessions stored in database")
+                        connection.execute("UPDATE sessions SET expires_at=0")
+                        connection.commit()
+                        connection.close()
+                        check("Welcome back" in owner.get()[1], "Expired database sessions rejected")
+                    finally:
+                        owner.base = base
+                        alternate.terminate()
+                        alternate.wait(timeout=10)
                 log.flush(); log.seek(0)
                 output = log.read()
                 check("Fatal error" not in output and "PHP Warning" not in output, "No runtime warnings")

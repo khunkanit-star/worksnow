@@ -1,0 +1,15 @@
+{
+    admin off
+    auto_https off
+}
+
+:{$PORT:80} {
+    root * /app/public
+    encode zstd gzip
+
+    # Only the application entry point, health check and public assets are routable.
+    @blocked not path / /index.php /health /assets/app.js /assets/style.css
+    respond @blocked "Not found" 404
+
+    php_server
+}
